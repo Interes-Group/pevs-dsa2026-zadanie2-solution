@@ -102,6 +102,7 @@ namespace trie {
     class Trie {
     private:
         Node *root;
+        set<string> files;
 
         // Returns true if the node should be deleted by its parent (has no children and is not an end of another word)
         bool removeWord(Node *current, const std::string &word, int depth) {
@@ -139,10 +140,19 @@ namespace trie {
 
         ~Trie() {
             delete root;
+            files.clear();
         }
 
         [[nodiscard]] Node *getRoot() const {
             return root;
+        }
+
+        [[nodiscard]] const set<string> &getFiles() const {
+            return files;
+        }
+
+        void addFile(const string &fileName) {
+            files.insert(fileName);
         }
 
         // Inserts a word and records the file it came from
@@ -185,13 +195,27 @@ namespace trie {
         }
 
         // Removes all words from the trie, leaving it empty.
-        void clear() const {
+        void clear() {
             root->clear();
+            files.clear();
         }
     };
 } // namespace trie
 
 const string INDEX_FILE = "vindex_index.txt";
+
+struct TrieStats {
+    int uniqueWords = 0;
+    int totalOccurrences = 0;
+    long long totalWordLen = 0; // for average length calculation
+    set<string> files; // unique file names across all words
+
+    // word -> totalFrequency, for top-5
+    vector<pair<string, int> > wordFrequencies;
+
+    // word -> number of files it appears in, for "most spread" word
+    pair<string, int> mostSpreadWord = {"", 0};
+};
 
 string readFile(const string &filePath) {
     ifstream file(filePath);
@@ -227,6 +251,42 @@ vector<string> preProcessWords(const string &content) {
     }
 
     return result;
+}
+
+// Recursively walks the trie and fills in the TrieStats struct.
+// 'currentWord' is built up character by character as we descend.
+void collectStats(trie::Node *node, const string &currentWord, TrieStats &stats) {
+    if (node == nullptr) return;
+
+    if (node->isEndOfWord()) {
+        stats.uniqueWords++;
+        stats.totalOccurrences += node->getTotalFrequency();
+        stats.totalWordLen += static_cast<long long>(currentWord.size());
+        stats.wordFrequencies.emplace_back(currentWord, node->getTotalFrequency());
+
+        int fileCount = static_cast<int>(node->getFiles().size());
+        if (fileCount > stats.mostSpreadWord.second) {
+            stats.mostSpreadWord = {currentWord, fileCount};
+        }
+
+        for (const auto &entry: node->getFiles()) {
+            stats.files.insert(entry.fileName);
+        }
+    }
+
+    for (char ch = 'a'; ch <= 'z'; ch++) {
+        trie::Node *child = node->getChild(ch);
+        if (child != nullptr) {
+            collectStats(child, currentWord + ch, stats);
+        }
+    }
+    // also check digits 0-9
+    for (char ch = '0'; ch <= '9'; ch++) {
+        trie::Node *child = node->getChild(ch);
+        if (child != nullptr) {
+            collectStats(child, currentWord + ch, stats);
+        }
+    }
 }
 
 // Recursively walks the trie and writes every end-of-word node as one line.
@@ -318,6 +378,13 @@ bool loadTrie(trie::Trie &t) {
     }
 
     in.close();
+
+    TrieStats stats;
+    collectStats(t.getRoot(), "", stats);
+    for (const string &file: stats.files) {
+        t.addFile(file);
+    }
+
     return true;
 }
 
@@ -328,55 +395,6 @@ vector<string> parseArgs(int argc, char *argv[]) {
         args.emplace_back(argv[i]);
     }
     return args;
-}
-
-struct TrieStats {
-    int uniqueWords = 0;
-    int totalOccurrences = 0;
-    long long totalWordLen = 0; // for average length calculation
-    set<string> files; // unique file names across all words
-
-    // word -> totalFrequency, for top-5
-    vector<pair<string, int> > wordFrequencies;
-
-    // word -> number of files it appears in, for "most spread" word
-    pair<string, int> mostSpreadWord = {"", 0};
-};
-
-// Recursively walks the trie and fills in the TrieStats struct.
-// 'currentWord' is built up character by character as we descend.
-void collectStats(trie::Node *node, const string &currentWord, TrieStats &stats) {
-    if (node == nullptr) return;
-
-    if (node->isEndOfWord()) {
-        stats.uniqueWords++;
-        stats.totalOccurrences += node->getTotalFrequency();
-        stats.totalWordLen += static_cast<long long>(currentWord.size());
-        stats.wordFrequencies.emplace_back(currentWord, node->getTotalFrequency());
-
-        int fileCount = static_cast<int>(node->getFiles().size());
-        if (fileCount > stats.mostSpreadWord.second) {
-            stats.mostSpreadWord = {currentWord, fileCount};
-        }
-
-        for (const auto &entry: node->getFiles()) {
-            stats.files.insert(entry.fileName);
-        }
-    }
-
-    for (char ch = 'a'; ch <= 'z'; ch++) {
-        trie::Node *child = node->getChild(ch);
-        if (child != nullptr) {
-            collectStats(child, currentWord + ch, stats);
-        }
-    }
-    // also check digits 0-9
-    for (char ch = '0'; ch <= '9'; ch++) {
-        trie::Node *child = node->getChild(ch);
-        if (child != nullptr) {
-            collectStats(child, currentWord + ch, stats);
-        }
-    }
 }
 
 // ── Command handlers ─────────────────────────────────────────────────────────
@@ -404,11 +422,16 @@ void cmdIndex(const vector<string> &args, trie::Trie &t) {
         return; // readFile already printed the error
     }
 
+    if (t.getFiles().count(filePath) == 1) {
+        cout << "File '" << filePath << "' was already indexed" << endl;
+        return;
+    }
+
     vector<string> words = preProcessWords(content);
     for (const string &word: words) {
         t.insert(word, filePath);
     }
-
+    t.addFile(filePath);
     cout << "Indexed " << words.size() << " words from: " << filePath << endl;
 }
 
