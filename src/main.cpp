@@ -443,14 +443,15 @@ void cmdSearch(const vector<string> &args, trie::Trie &t) {
     }
 
     const string &word = args[0];
-    trie::Node *result = t.search(word);
+    const string targetWord = preProcessWords(word)[0];
+    trie::Node *result = t.search(targetWord);
 
     if (result == nullptr) {
-        cout << "Word '" << word << "' was not found in the index." << endl;
+        cout << "Word '" << targetWord << "' was not found in the index." << endl;
         return;
     }
 
-    cout << "Word: \"" << word << "\"" << endl;
+    cout << "Word: \"" << targetWord << "\"" << endl;
     for (const auto &entry: result->getFiles()) {
         cout << "  " << entry.fileName << " : " << entry.frequency << " occurrence(s)" << endl;
     }
