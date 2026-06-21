@@ -1,0 +1,36 @@
+name: compliance_check.yml
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  build:
+    name: Build and test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Install gcc
+        run: |
+          sudo apt update
+          sudo apt install -y build-essential g++
+          g++ --version
+      - name: Compile
+        run: |
+          mkdir -p bin
+          g++ -std=c++17 -Wall -Wextra -o bin/vindex src/main.cpp
+          ls -lah bin | grep vindex
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+      - name: Test
+        run: |
+          cd test
+          npm install
+          npm test
+      - name: Print test snapshots
+        run: cat test/__snapshots__/*.snap
